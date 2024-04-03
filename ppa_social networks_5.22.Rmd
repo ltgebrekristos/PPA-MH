@@ -1,0 +1,355 @@
+---
+title: "PPA_MH"
+author: "L. Gebrekristos"
+date: "4/13/2023"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## NEEDED PACKAGES
+
+```{r packages,warning=FALSE,message=FALSE}
+library(haven)
+library(dplyr)
+library(Gmisc)
+library(table1)
+library(flextable)
+library(kableExtra)
+```
+
+## CLEANING DATA
+Cutoff for outcome: https://link.springer.com/article/10.1007/s11606-008-0846-z
+
+```{r clean}
+setwd("C:/Users/lgebr/Dropbox/PPA")
+ppa <- read_dta('C:/Users/lgebr/Dropbox/PPA/PPA_KENYA_TOOL_ ADOLESCENT DEC 7.dta')
+
+ppa<-ppa%>%
+  #dad supports edu. Very==1, Somewhat=2, No support/not alive=3
+  mutate(dadedusupp=case_when(
+    q206_1==1~1,
+    q206_1==2~2,
+    q206_1==3 | q201_1 %in% c(0,2)~3))%>%
+   #mom supports edu. Very==1, Somewhat=2, No support/not alive=3
+  mutate(momedusupp=case_when(
+    q212_1==1~1,
+    q212_1==2~2,
+    q212_1==3| q207_1 %in% c(0,2)~3))%>%
+    #either parent supports=1
+  mutate(partedusupp=case_when(
+    momedusupp==1 | dadedusupp==1~1,
+    momedusupp==0 & dadedusupp==0~0))%>%
+  #member of social network==1
+  mutate(socialnet=case_when(
+    q301a_1==1|q301b_1==1|q301c_1==1|q301d_1==1|q301e_1==1|q301f_1==1|
+      q301g_1==1|q301h_1==1|q301i_1==1|q301j_1==1~1,
+    q301a_1==0 & q301b_1==0 & q301c_1==0 & q301d_1==0 & q301e_1==0 & q301f_1==0 & q301g_1==0 & q301h_1==0 & q301i_1==0 & q301j_1==0~0))%>%
+   mutate(across(c(q309_1, q310_1, q311_1, q312_1, q318_1, q319_1, q320_1, q321_1, q322_1), ~ifelse( .x == 2, 0,.x)))%>%
+  mutate(across(c(q313_1, q314_1, q316_1, q317_1),~ifelse(.x == 2, 1,ifelse(.x == 1, 0, NA))))%>%
+  #robbed recode
+  mutate(robbed=case_when(
+    q315_1==2~0,
+    q315_1==1~1))%>%
+  #sum of just safety specific ones
+  mutate(safetycomm=rowSums(across(c(q309_1, q310_1, q311_1, q312_1, q317_1))))%>%
+  #have female friend
+  mutate(femalefriend=case_when(
+    q318_1==1 | q319_1==1| q320_1==1 | q321_1==1~1,
+    q318_1==0 & q319_1==0 & q320_1==0 & q321_1==0~0))%>%
+  #parental support during pregnancy. good=1; fair=2 poor/no supp/no par=3
+  mutate(parsupppreg=case_when(
+    q720_1==1~1,
+    q720_1==2~2,
+    q720_1 %in% c(3,4,5)~3))%>%
+  #child's father support during pregnancy. good=1; fair=2; poor/no supp=3
+  mutate(babydadpreg=case_when(
+    q722_1==1~1,
+    q722_1==2~2,
+    q722_1 %in% c(3,4)~3))%>%
+  #child's father denied paternity=1 
+  mutate(deniedpat=case_when(
+    q719_1==1~1,
+    q719_1 %in% c(2,3,4,5)~0))%>%
+  #covars: edu,married,work, agebin, IPV (ever)
+  mutate(edu=case_when(
+    q110_1==1~1,
+    q110_1 %in% c(2,3,4)~2))%>%
+  mutate(married=case_when(
+    q504_1 %in% c(1,2)~1,
+    q504_1 %in% c(3,4)~2,
+    q504_1==99 | q502_1==0~3))%>%
+  mutate(work=case_when(
+    q120_1==1~1,
+    q120_1==0 | q118_1==0~0))%>%
+  mutate(agebin=case_when(
+    q103_1<18~0,
+    q103_1>=18~1))%>%
+  mutate(viol=case_when(
+    q903p1a_1==1 | q903p2a_1==1|q903p3a_1==1 | q903p4a_1==1|
+      q903p5a_1==1 | q903p6a_1==1 | q903p7a_1==1 | q903p8a_1==1 | q903p9a_1==1 | q903p10a_1==1 | q903p11a_1==1 | q903p12a_1==1 | q903p13a_1==1 | q903p14a_1==1 | q903p15a_1==1~1,
+    q903p1a_1==0 & q903p2a_1==0&q903p3a_1==0 & q903p4a_1==0&
+      q903p5a_1==0 & q903p6a_1==0 & q903p7a_1==0 & q903p8a_1==0 & q903p9a_1==0 & q903p10a_1==0 & q903p11a_1==0 & q903p12a_1==0 & q903p13a_1==0 & q903p14a_1==0 & q903p15a_1==0~0))%>%
+  mutate(ipv=case_when(
+    viol==1 & (q903p1c_1 %in% c(2,3) | q903p2c_1 %in% c(2,3) | q903p3c_1 %in% c(2,3) | q903p4c_1 %in% c(2,3) |
+q903p5c_1 %in% c(2,3) | q903p6c_1 %in% c(2,3) | q903p7c_1 %in% c(2,3) | q903p8c_1 %in% c(2,3) |
+q903p9c_1 %in% c(2,3) | q903p10c_1 %in% c(2,3) | q903p11c_1 %in% c(2,3) | q903p12c_1 %in% c(2,3) | q903p13c_1 %in% c(2,3) | q903p14c_1 %in% c(2,3) | q903p15c_1 %in% c(2,3))~1,
+viol==0~0,
+viol==1 & (! q903p1c_1 %in% c(2,3) & ! q903p2c_1 %in% c(2,3) & ! q903p3c_1 %in% c(2,3) & ! q903p4c_1 %in% c(2,3) &
+! q903p5c_1 %in% c(2,3) & ! q903p6c_1 %in% c(2,3) & ! q903p7c_1 %in% c(2,3) & ! q903p8c_1 %in% c(2,3) &
+! q903p9c_1 %in% c(2,3) & ! q903p10c_1 %in% c(2,3) & ! q903p11c_1 %in% c(2,3) & ! q903p12c_1 %in% c(2,3) & ! q903p13c_1 %in% c(2,3) & ! q903p14c_1 %in% c(2,3) & ! q903p15c_1 %in% c(2,3))~0))%>%
+  #depression: cutoff 3 vs 2
+  mutate(interest=q408p1_1-1)%>%
+  mutate(depressed=q408p2_1-1)%>%
+  mutate(depsum=interest+depressed)%>%
+  mutate(dep2=case_when(
+    depsum<2~0,
+    depsum>=2~1))%>%
+  mutate(dep3=case_when(
+    depsum<3~0,
+    depsum>=3~1))%>%
+  #child birth year and month
+  mutate(childyear1=case_when(
+    q704b_1_1>=2013 & q704b_1_1<=2022~q704b_1_1))%>%
+  mutate(childdate1=childyear1+(q704a_1_1/12))%>%
+  mutate(childdate2=q704b_1_2+(q704a_1_2/12))%>%
+  mutate(childdate3=q704b_1_3+(q704a_1_3/12))%>%
+  mutate(childdate4=q704b_1_4+(q704a_1_4/12))
+
+#interview date
+ppa$intdate<-ppa$q101a
+ppa <- tidyr::separate(ppa,q101a, into = c("intyear", "intmonth", "intday"), sep = "-")
+ppa$intyear<-as.numeric(ppa$intyear)
+ppa$intmonth<-as.numeric(ppa$intmonth)/12
+ppa$intday<-as.numeric(ppa$intday)
+ppa$interview<-ppa$intyear+ppa$intmonth
+
+#child's age
+ppa<-ppa %>%
+  mutate(yeardiff1=interview-childyear1)%>%
+  mutate(age1=case_when(
+    !is.na(childdate1)~(interview-childdate1),
+    is.na(childdate1)~99))%>%
+  mutate(age2=case_when(
+    !is.na(childdate2)~(interview-childdate2),
+    is.na(childdate2)~99))%>%
+  mutate(age3=case_when(
+    !is.na(childdate3)~(interview-childdate3),
+    is.na(childdate3)~99))%>%
+  mutate(age4=case_when(
+    !is.na(childdate4)~(interview-childdate4),
+    is.na(childdate4)~99))
+
+ppa2<-ppa%>%
+  mutate(lastchild =  apply( ppa[c('age1', 'age2','age3','age4')], 1, max ),
+                           type = colnames(ppa[c('age1', 'age2','age3','age4')])[max.col(ppa[c('age1', 'age2','age3','age4')])])
+
+ppa<-ppa%>%
+ mutate(lastchild = pmin(age1,age2,age3,age4))
+```
+
+## SUBSET DATA
+```{r subset}
+ppa<-ppa%>%
+  filter(q702_1>0)
+missdadsupp<-ppa%>%
+  filter(is.na(dadedusupp))
+missmomsupp<-ppa%>%
+  filter(is.na(momedusupp))
+missbothsupp<-ppa%>%
+  filter(is.na(partedusupp))
+missparpreg<-ppa%>%
+  filter(is.na(parsupppreg))
+missdadpreg<-ppa%>%
+  filter(is.na(babydadpreg))
+missdenied<-ppa%>%
+  filter(is.na(deniedpat))
+missipv<-ppa%>%
+  filter(is.na(ipv))
+socialnet<-ppa%>%
+  filter(is.na(socialnet))
+lastchild<-ppa%>%
+  filter(lastchild==99)
+married<-ppa%>%
+  filter(is.na(married))
+age<-ppa%>%
+  filter(is.na(q103_1))
+births<-ppa%>%
+  filter(is.na(q702_1))
+work<-ppa%>%
+  filter(is.na(work))
+inschool<-ppa%>%
+  filter(is.na(q112_1))
+dep3<-ppa%>%
+  filter(is.na(dep3))
+
+subsetppa<-ppa%>%
+  filter(!is.na(dep3) & !is.na(q112_1) & !is.na(work) & !is.na(q702_1) & !is.na(q103_1) & !is.na(married)&!lastchild==99&!is.na(socialnet)& !is.na(momedusupp)& !is.na(dadedusupp))
+
+```
+
+|    Variables                 |  Missing   
+| :---                |   ----:    |       
+| dadsupp      |     `r nrow(missdadsupp)`       | 
+| momsupp      |     `r nrow(missmomsupp)`       | 
+| parsupppreg     | `r nrow(missparpreg)`         |
+| babydadpreg     | `r nrow(missdadpreg)`         |
+| deniedpat     | `r nrow(missdenied)`         |
+| ipv     | `r nrow(missipv)`         |
+| socialnet   |     `r nrow(socialnet)`       |
+| lastchild   |     `r nrow(lastchild)`       |
+| married   |     `r nrow(married)`       |
+| age   |     `r nrow(age)`       |
+| births   |     `r nrow(births)`       |
+| work   |     `r nrow(work)`       |
+| inschool   |     `r nrow(inschool)`       |
+| dep   |     `r nrow(dep3)`       |
+| TOTAL   |     `r nrow(ppa)-nrow(subsetppa)`       |
+
+## Table 1
+```{r univars,warning=FALSE,message=FALSE}
+#descriptive stats
+subsetppa<-subsetppa%>%
+  mutate(dadedusupp = factor(dadedusupp, labels = c("Very Supportive", "Somewhat Supportive","No Support/Not Alive")))%>%
+  mutate(momedusupp = factor(momedusupp, labels = c("Very Supportive", "Somewhat Supportive","No Support/Not Alive")))%>%
+  #mutate(partedusupp = factor(partedusupp, labels = c("No", "Yes")))%>%
+  mutate(parsupppreg = factor(parsupppreg, labels = c("Good", "Fair","Poor/No Support/No Parent")))%>%
+   mutate(babydadpreg = factor(babydadpreg, labels = c("Good", "Fair","Poor")))%>%
+  mutate(deniedpat = factor(deniedpat, labels = c("No", "Yes")))%>%
+  mutate(ipv = factor(ipv, labels = c("No", "Yes")))%>%
+  mutate(socialnet = factor(socialnet, labels = c("No", "Yes")))%>%
+  mutate(edu = factor(edu, labels = c("Primary", "Secondary or Higher")))%>%
+  mutate(married = factor(married, labels = c("Married/Cohabiting", "Separated/Divorced","Single")))%>%
+  mutate(work = factor(work, labels = c("No", "Yes")))%>%
+  mutate(q112_1 = factor(q112_1, labels = c("No", "Yes")))%>%
+  mutate(q709_1 = factor(q709_1, labels = c("Yes", "No","Unsure")))%>%
+  mutate(dep3 = factor(dep3, labels = c("No Depression", "Depression")))%>%
+  mutate(femalefriend = factor(femalefriend,labels = c("No","Yes")))%>%
+  mutate(robbed = factor(robbed, labels = c("No", "Yes")))%>%
+  set_column_labels(q103_1 = "Age (in years)",
+                    married = "Marital Status",
+                    edu = "Highest Level of Education",
+                    q112_1 = "Currently in School",
+                    work = "Currently Working for Pay",
+                    q702_1 = "Number of Births",
+                    lastchild = "Number of years postpartum",
+                    q709_1 = "Currently pregnant",
+                    dadedusupp = "Dad supports girls' education",
+                    momedusupp = "Mom supports girls' education",
+                    partedusupp = "Either parent supports girls' education",
+                    parsupppreg = "Parental support during pregnancy",
+                    babydadpreg = "Child's father support during pregnancy",
+                    deniedpat= "Child's father denied paternity",
+                    ipv = "Ever exposed to IPV",
+                    socialnet ="Member of a social club",
+                    safetycomm = "Safety in the community/neighborhood",
+                    robbed= "Robbed in the last 6 months",
+                    femalefriend = "Reports having a female friend",
+                    dep3= "Depression")
+
+my.render.cont <- function(x) {
+    with(stats.apply.rounding(stats.default(x), digits=2), c("",
+        "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))
+}
+
+relev <- function(f) relevel(factor(f), ref = "Yes")
+
+var_vector<-c("robbed","femalefriend","work","q112_1","socialnet","q709_1","deniedpat","ipv")
+t1<-subsetppa%>%
+  mutate_each(funs(relev), one_of(var_vector))%>%
+  set_column_labels(q112_1 = "Currently in School",
+                    work = "Currently Working for Pay",
+                    dadedusupp = "Dad supports girls' education",
+                    momedusupp = "Mom supports girls' education",
+                    partedusupp = "Either parent supports girls' education",
+                    deniedpat= "Child's father denied paternity",
+                    ipv = "Ever exposed to IPV",
+                    parsupppreg = "Parental support during pregnancy",
+                    socialnet ="Member of a social club",
+                    robbed= "Robbed in the last 6 months",
+                    femalefriend = "Reports having a female friend",                     q709_1 = "Currently pregnant")
+  
+tbl1<-table1(~momedusupp + dadedusupp + partedusupp + parsupppreg + babydadpreg + deniedpat+ socialnet +safetycomm+robbed+femalefriend+q103_1 + married + q112_1 + work + q702_1 + lastchild +q709_1+ipv|dep3, data=t1, overall=c(left="Overall"), render.continous=my.render.cont)
+
+t1flex(tbl1) %>% 
+  save_as_docx(path="PPA_MH_table1.docx")
+```
+
+
+
+```{r multivar}
+#models for each exposure
+mom1<-glm(dep3 ~ momedusupp + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+momsum<-summary(mom1)
+
+dad1 <- glm(dep3 ~ dadedusupp + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+dadsum<-summary(dad1)
+
+both1 <- glm(dep3 ~ partedusupp + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+bothsum<-summary(both1)
+
+preg1 <- glm(dep3 ~ parsupppreg + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+pregsum<-summary(preg1)
+
+clubsbin1 <- glm(dep3 ~ socialnet + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+clubbinsum<-summary(clubsbin1)
+
+safety1 <- glm(dep3 ~ safetycomm + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+safesum<-summary(safety1)
+
+rob1 <- glm(dep3 ~ robbed + q103_1 + married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+robsum<-summary(rob1)
+
+female1 <- glm(dep3 ~ femalefriend + q103_1+married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+femalesum<-summary(female1)
+
+babydad1 <- glm(dep3 ~ babydadpreg + q103_1+married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+babydadsum<-summary(babydad1)
+
+denied1 <- glm(dep3 ~ deniedpat + q103_1+married + q112_1 + work + q702_1+lastchild+q709_1+ipv, data = subsetppa, family = "binomial")
+deniedsum<-summary(denied1)
+
+
+#create table with OR, Confidence Intervals, and P-Values
+resultsone <- function(text, summary) {
+    OR<-round(exp(summary$coefficients[2]),2)
+    LCI<-round(exp(summary$coefficients[2] + qnorm(0.05/2)*summary$coefficients[2,2]),3)
+    UCI<-round(exp(summary$coefficients[2] - qnorm(0.05/2)*summary$coefficients[2,2]),3)
+    P<-round(summary$coefficients[2,4],3)
+  results<-cbind(Models=text,OR,LCI,UCI,P)
+  results
+}
+
+results <- function(text, summary,text1,text2) {
+    OR<-c("",round(exp(summary$coefficients[2]),2),round(exp(summary$coefficients[3]),2))
+    LCI<-c("",round(exp(summary$coefficients[2] + qnorm(0.05/2)*summary$coefficients[2,2]),3),round(exp(summary$coefficients[3] + qnorm(0.05/2)*summary$coefficients[3,2]),3))
+    UCI<-c("",round(exp(summary$coefficients[2] - qnorm(0.05/2)*summary$coefficients[2,2]),3), round(exp(summary$coefficients[3] - qnorm(0.05/2)*summary$coefficients[3,2]),3))
+    P<-c("",round(summary$coefficients[2,4],3), round(summary$coefficients[3,4],3))
+    Models<-c(text,text1,text2)
+  results<-cbind(Models,OR,LCI,UCI,P)
+  results
+}
+    
+momresults<-results("Model 1: Mom supports girls' education",momsum,"Somewhat Supportive", "No Support/Not Alive")
+dadresults<-results("Model 2: Dad supports girls' education",dadsum,"Somewhat Supportive", "No Support/Not Alive")
+pregresults<-results("Model 4: Parental Support during pregnancy",pregsum,"Fair", "Poor/No Support/Not Alive")
+clubbinresults<-resultsone("Model 5: Member of a social club",clubbinsum)
+saferesults<-resultsone("Model 6: Safety in community",safesum)
+robresults<-resultsone("Model 7: Robbed in the last 6 months",robsum)
+femaleresults<-resultsone("Model 8: Reports have a female friend",femalesum)
+babydadresults<-results("Model 9: Child's father support pregnancy",babydadsum, "Fair","Poor")
+deniedresults<-resultsone("Model 9: Child's father denied paternity",deniedsum)
+
+multiresults<-rbind(momresults,dadresults,pregresults,clubbinresults,saferesults,robresults,femaleresults,babydadresults,deniedresults)
+
+multiresults %>%
+  kable() %>%
+  kable_styling()%>%
+  add_footnote(c("Model adjusted for age, marital status, education status, work status, parity, time since delivery, IPV and currently pregnant."))
+```
+
+
+
